@@ -1,0 +1,230 @@
+Steps
+Step 1: Setting Up the Environment
+Install Go, PostgreSQL, Redis, RabbitMQ, and Docker.
+
+Create a new Go module:
+
+bash
+
+mkdir product-management-backend && cd product-management-backend
+go mod init product-management-backend
+Install necessary dependencies:
+
+bash
+
+go get github.com/gorilla/mux
+go get github.com/jackc/pgx/v4
+go get github.com/redis/go-redis/v8
+go get github.com/streadway/amqp
+go get github.com/sirupsen/logrus
+go get github.com/stretchr/testify
+
+Step 2: Database Schema
+PostgreSQL Schema:
+Create a schema file schema.sql:
+
+sql
+
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE products (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    product_name VARCHAR(255) NOT NULL,
+    product_description TEXT NOT NULL,
+    product_images TEXT[] NOT NULL,
+    compressed_product_images TEXT[],
+    product_price DECIMAL(10, 2) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+Run the schema:
+
+bash
+
+psql -U your_username -d your_database -f schema.sql
+
+Step 3: API Development
+Directory Structure
+go
+
+product-management-backend/
+├── main.go
+├── handlers/
+│   └── product.go
+├── models/
+│   └── product.go
+├── services/
+│   └── image_processor.go
+├── utils/
+│   └── logger.go
+├── go.mod
+├── go.sum
+Main API File
+main.go:
+
+go
+
+package main
+
+import (
+	"log"
+	"net/http"
+	"product-management-backend/handlers"
+
+	"github.com/gorilla/mux"
+)
+
+func main() {
+	r := mux.NewRouter()
+	
+	// Product Routes
+	r.HandleFunc("/products", handlers.CreateProduct).Methods("POST")
+	r.HandleFunc("/products/{id:[0-9]+}", handlers.GetProductByID).Methods("GET")
+	r.HandleFunc("/products", handlers.GetProducts).Methods("GET")
+	
+	// Start Server
+	log.Println("Starting server on port 8080...")
+	if err := http.ListenAndServe(":8080", r); err != nil {
+		log.Fatal(err)
+	}
+}
+Handler for Products
+handlers/product.go:
+
+go
+
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"product-management-backend/models"
+)
+
+func CreateProduct(w http.ResponseWriter, r *http.Request) {
+	var product models.Product
+	if err := json.NewDecoder(r.Body).Decode(&product); err != nil {
+		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Product created"})
+}
+
+func GetProductByID(w http.ResponseWriter, r *http.Request) {
+	// Fetch product from database/cache
+}
+
+func GetProducts(w http.ResponseWriter, r *http.Request) {
+	// Fetch all products with optional filtering
+}
+Product Model
+models/product.go:
+
+go
+
+package models
+
+type Product struct {
+	ID                    int      `json:"id"`
+	UserID                int      `json:"user_id"`
+	ProductName           string   `json:"product_name"`
+	ProductDescription    string   `json:"product_description"`
+	ProductImages         []string `json:"product_images"`
+	CompressedProductImages []string `json:"compressed_product_images"`
+	ProductPrice          float64  `json:"product_price"`
+}
+
+Step 4: Asynchronous Image Processing
+Service for Image Processing
+services/image_processor.go:
+
+go
+
+package services
+
+import (
+	"log"
+)
+
+func ProcessImages(urls []string) []string {
+	var compressedImages []string
+	for _, url := range urls {
+		// Simulate image compression
+		log.Println("Compressing image:", url)
+		compressedImages = append(compressedImages, url+"_compressed")
+	}
+	return compressedImages
+}
+
+Step 5: Caching with Redis
+go
+
+import (
+	"github.com/redis/go-redis/v8"
+)
+
+var redisClient = redis.NewClient(&redis.Options{
+	Addr: "localhost:6379",
+})
+
+func CacheProduct(product models.Product) {
+	key := fmt.Sprintf("product:%d", product.ID)
+	redisClient.Set(ctx, key, product, 0)
+}
+
+func GetCachedProduct(id int) *models.Product {
+	key := fmt.Sprintf("product:%d", id)
+	cached, err := redisClient.Get(ctx, key).Result()
+	if err != nil {
+		return nil
+	}
+	var product models.Product
+	json.Unmarshal([]byte(cached), &product)
+	return &product
+}
+
+Step 6: Logging
+utils/logger.go:
+
+go
+
+package utils
+
+import "github.com/sirupsen/logrus"
+
+var Logger = logrus.New()
+
+func InitLogger() {
+	Logger.SetFormatter(&logrus.JSONFormatter{})
+	Logger.SetLevel(logrus.InfoLevel)
+}
+
+Step 7: Testing
+Write unit tests using testify. For example:
+
+go
+
+package handlers_test
+
+import (
+	"testing"
+	"net/http"
+	"net/http/httptest"
+)
+
+func TestCreateProduct(t *testing.T) {
+	req, _ := http.NewRequest("POST", "/products", nil)
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(CreateProduct)
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusCreated {
+		t.Errorf("Handler returned wrong status code: got %v want %v", status, http.StatusCreated)
+	}
+}
+
+
